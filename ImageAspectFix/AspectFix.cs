@@ -10,6 +10,12 @@ namespace ImageAspectFix
         public static EncoderParameters group4TiffEncoder = new EncoderParameters(1);
         public static ImageCodecInfo tiffCodec = null;
 
+        public enum AvailableCodecs
+        {
+            jpeg,
+            png,
+            faxCCITTV
+        }
 
         /*  Create a list of acceptable codecs!!
          * 
@@ -30,7 +36,7 @@ namespace ImageAspectFix
          * 
         */
 
-
+        
         /// <summary>
         /// Returns SumoImage object
         /// Gets the pixel height & width as well as the resolutions of the image
@@ -68,31 +74,60 @@ namespace ImageAspectFix
 
 
 
+        private static void MakeBackupCopy(string filePath)
+        {
+            var targetPath = filePath + ".aspectfix.bak";
+            File.Copy(filePath, targetPath, false);
+        }
+
+
+
         /// <summary>
-        /// If length - width or width - length ratio is less than .5, correct to 8.5 x 11 ratio and return the corrected image as a bitmap object
+        /// If length - width or width - length ratio is less than the threshold, correct to 8.5 x 11 ratio and return the corrected image as a bitmap object
+        /// Will SKIP any files with .bak extension
+        /// Altered files are backed up with extension .aspectfix.bak - this will not be overwritten if already existing
         /// </summary>
+        /// <param name="doCreateImageBackup">If true, will create a backup of original image - extension - .aspectfix.bak</param>
         /// <param name="filePath">Pass the full path to the image</param>
         /// <param name="DPI">The resolution which will be set if the image is corrected - DEFAULT IS 200</param>
-        public static Bitmap FixImage(SumoImage Image, int DPI = 200, float widthRatio = 8.5f, float heightRatio = 11f)
+        public static Bitmap FixImage(bool doCreateImageBackup, SumoImage Image, int DPI = 200, float widthRatio = 8.5f, float heightRatio = 11f)
         {
+            // Skip already backed up files
+            if (Path.GetExtension(Image.Path) == ".bak")
+                return null;
+
+
+            float height = Image.Height;
+            float width = Image.Width;
+
             // If screwed up and portrait
-            if (Image.Width / Image.Height < 0.5)
+            if (width / height < 0.65)
             {
-                float targetHeight = Image.Width / (widthRatio / heightRatio);
+                if (doCreateImageBackup && !File.Exists(Image.Path + ".aspectfix.bak"))
+                    MakeBackupCopy(Image.Path);
+
+                float targetHeight = width / (widthRatio / heightRatio);
 
                 Bitmap returnImage = new Bitmap(Image.ImageBitmap, (int)Image.Width, (int)targetHeight);
                 returnImage.SetResolution(DPI, DPI);
+
+                Image.ImageBitmap.Dispose();
 
                 return returnImage;
 
             }
             // If screwed up and landscape...
-            else if (Image.Height / Image.Width < 0.5)
+            else if (height / width < 0.75)
             {
-                float targetWidth = Image.Height / (widthRatio / heightRatio);
+                if (doCreateImageBackup)
+                    MakeBackupCopy(Image.Path);
+
+                float targetWidth = height / (widthRatio / heightRatio);
 
                 Bitmap returnImage = new Bitmap(Image.ImageBitmap, (int)targetWidth, (int)Image.Height);
                 returnImage.SetResolution(DPI, DPI);
+
+                Image.ImageBitmap.Dispose();
 
                 return returnImage;
             }
@@ -104,16 +139,24 @@ namespace ImageAspectFix
 
 
         /// <summary>
-        /// If length - width or width - length ratio is less than .5, correct to 8.5 x 11 ratio and write image to outputFilePath
+        /// If length - width or width - length ratio is less than the threshold, correct to 8.5 x 11 ratio and write image to outputFilePath
         /// Output is Group 4 Fax Tiff format
+        /// Will SKIP any files with .bak extension
+        /// Altered files are backed up with extension .aspectfix.bak - this will not be overwritten if already existing
         /// </summary>
+        /// <param name="doCreateImageBackup">If true, will create a backup of original image - extension - .aspectfix.bak</param>
         /// <param name="inputFilePath">Pass the full path to the image</param>
         /// <param name="DPI">The resolution which will be set if the image is corrected - DEFAULT IS 200</param>
         /// <param name="outputFilePath">Location you wish to save the modified file to
         /// ***Set this to the same as inputFilePath (SumoImage.Path) to OVERWRITE the original file
         /// Output format is Group 4 TIFF</param>
-        public static void FixImage(SumoImage Image, string outputFilePath, int DPI = 200, float widthRatio = 8.5f, float heightRatio = 11f)
+        public static void FixImage(bool doCreateImageBackup, SumoImage Image, string outputFilePath, int DPI = 200, float widthRatio = 8.5f, float heightRatio = 11f)
         {
+            // Skip already backed up files
+            if (Path.GetExtension(Image.Path) == ".bak")
+                return;
+
+
             // Get the Group 4 Fax codec (JPEG OR TIFF ONLY)
             group4TiffEncoder.Param[0] = new EncoderParameter(Encoder.Compression, (long)EncoderValue.CompressionCCITT4);
             ImageCodecInfo[] codec = ImageCodecInfo.GetImageEncoders();
@@ -134,15 +177,22 @@ namespace ImageAspectFix
                 throw new Exception("Error: Attempt to save image in a codec that is not installed.");
             }
 
+            float height = Image.Height;
+            float width = Image.Width;
 
-            // If screwed up and portrait
-            if (Image.Width / Image.Height < 0.5)
+            // If tall & skinny - portrait
+            if (width / height < 0.65)
             {
-                float targetHeight = Image.Width / (widthRatio / heightRatio);
+                if (doCreateImageBackup && !File.Exists(Image.Path + ".aspectfix.bak"))
+                    MakeBackupCopy(Image.Path);
+
+                float targetHeight = width / (widthRatio / heightRatio);
 
                 // Open the TIFF image 
                 Bitmap returnImage = new Bitmap(Image.ImageBitmap, (int)Image.Width, (int)targetHeight);
                 returnImage.SetResolution(DPI, DPI);
+
+                Image.ImageBitmap.Dispose();
 
                 if (File.Exists(outputFilePath))
                     File.Delete(outputFilePath);
@@ -152,13 +202,20 @@ namespace ImageAspectFix
 
             }
             // If screwed up and landscape...
-            else if (Image.Height / Image.Width < 0.5)
+            // This will make the image 8.5 x 11 sideways, but won't know if it's a reeeaallly squished portrait image :(
+            else if (height / width < 0.75)
             {
-                float targetWidth = Image.Height / (widthRatio / heightRatio);
+                var backupFilePath = Image.Path + ".aspectfix.bak";
+                if (doCreateImageBackup && !File.Exists(backupFilePath))
+                    MakeBackupCopy(Image.Path);
+
+                float targetWidth = height / (widthRatio / heightRatio);
 
                 // Open the TIFF image 
                 Bitmap returnImage = new Bitmap(Image.ImageBitmap, (int)targetWidth, (int)Image.Height);
                 returnImage.SetResolution(DPI, DPI);
+
+                Image.ImageBitmap.Dispose();
 
                 if (File.Exists(outputFilePath))
                     File.Delete(outputFilePath);
@@ -184,22 +241,29 @@ namespace ImageAspectFix
         /// <param name="DPI"></param>
         public static Bitmap FixImageAuto(SumoImage Image, int DPI = 200, float widthRatio = 8.5f, float heightRatio = 11f)
         {
-            if (Image.Width < Image.Height) // Portrait
-            {
-                float targetHeight = Image.Width / (widthRatio / heightRatio);
+            float width = Image.Width;
+            float height = Image.Height;
 
-                Bitmap returnBitmap = new Bitmap(Image.ImageBitmap, (int)Image.Width, (int)targetHeight);
+            if (width < height) // Portrait
+            {
+                float targetHeight = width / (widthRatio / heightRatio);
+
+                Bitmap returnBitmap = new Bitmap(Image.ImageBitmap, (int)width, (int)targetHeight);
                 returnBitmap.SetResolution(DPI, DPI);
+
+                Image.ImageBitmap.Dispose();
 
                 return returnBitmap;
 
             }
             else // Landscape
             {
-                float targetWidth = Image.Height / (widthRatio / heightRatio);
+                float targetWidth = height / (widthRatio / heightRatio);
 
-                Bitmap returnBitmap = new Bitmap(Image.ImageBitmap, (int)targetWidth, (int)Image.Height);
+                Bitmap returnBitmap = new Bitmap(Image.ImageBitmap, (int)targetWidth, (int)height);
                 returnBitmap.SetResolution(DPI, DPI);
+
+                Image.ImageBitmap.Dispose();
 
                 return returnBitmap;
             }
@@ -232,13 +296,17 @@ namespace ImageAspectFix
                 }
             }
 
+            float width = Image.Width;
+            float height = Image.Height;
 
-            if (Image.Width < Image.Height) // Portrait
+            if (width < height) // Portrait
             {
-                float targetHeight = Image.Width / (widthRatio / heightRatio);
+                float targetHeight = width / (widthRatio / heightRatio);
 
-                Bitmap returnBitmap = new Bitmap(Image.ImageBitmap, (int)Image.Width, (int)targetHeight);
+                Bitmap returnBitmap = new Bitmap(Image.ImageBitmap, (int)width, (int)targetHeight);
                 returnBitmap.SetResolution(DPI, DPI);
+
+                Image.ImageBitmap.Dispose();
 
                 if (System.IO.File.Exists(outputFilePath))
                     System.IO.File.Delete(outputFilePath);
@@ -249,10 +317,12 @@ namespace ImageAspectFix
             }
             else // Landscape
             {
-                float targetWidth = Image.Height / (widthRatio / heightRatio);
+                float targetWidth = height / (widthRatio / heightRatio);
 
-                Bitmap returnBitmap = new Bitmap(Image.ImageBitmap, (int)targetWidth, (int)Image.Height);
+                Bitmap returnBitmap = new Bitmap(Image.ImageBitmap, (int)targetWidth, (int)height);
                 returnBitmap.SetResolution(DPI, DPI);
+
+                Image.ImageBitmap.Dispose();
 
                 if (System.IO.File.Exists(outputFilePath))
                     System.IO.File.Delete(outputFilePath);

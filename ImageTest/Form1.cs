@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -11,19 +12,44 @@ using System.Windows.Forms;
 
 namespace ImageTest
 {
-    public partial class Form1 : Form
+    public partial class ImageAspectFixTestWindow : Form
     {
-        public Form1()
+        public ImageAspectFixTestWindow()
         {
             InitializeComponent();
         }
 
 
-        private void btnOpen_Click(object sender, EventArgs e)
+
+        private void btnProcess_Click(object sender, EventArgs e)
         {
-            // Just to force the method to run so we can look at the variables
-            SumoImage test = new SumoImage();
-            AspectFix.FixImage(test, @"C:\");
+            var imagePath = txtImagesPath.Text.Trim();
+
+            foreach(var file in Directory.GetFiles(imagePath))
+            {
+                SumoImage image = new SumoImage();
+
+                try
+                {
+                    image = AspectFix.GrabImageAttributes(file);
+                }
+                catch (Exception ex)
+                {
+                    txtLog.AppendText($"Error creating image object for {file} - {ex.Message}\n");
+                    continue;
+                }
+
+
+                try
+                {
+                    AspectFix.FixImage(true, image, file);
+                    txtLog.AppendText($"{file} processed.\n");
+                }
+                catch (Exception ex)
+                {
+                    txtLog.AppendText($"Error fixing image ration for {file} - {ex.Message}\n");
+                }
+            }
         }
     }
 }
